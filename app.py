@@ -237,19 +237,19 @@ for prog in selected_programs:
     ds2 = st.file_uploader(f"[{prog}] File doanh số #2", type=["xlsx"], key=f"{prog}_ds2")
 
     if tb1 and tb2 and st.button(f"Xử lý CT {prog}", key=f"{prog}_process"):
-        # Dùng session_state để giữ kết quả → lọc mượt, chỉ hiện 1 bảng
+        # ---- giữ kết quả theo CT trong session ----
         data_key = f"__{prog}_data__"
         
-        # 1) Bấm xử lý để tạo dữ liệu & lưu session
+        # 1) Nút xử lý: đọc TB + DS, tính trạng thái, lưu session
         if tb1 and tb2:
-            if st.button(f"Xử lý CT {prog}", key=f"{prog}_process"):
+            if st.button(f"Xử lý CT {prog}", key=f"{prog}_process_btn"):
                 try:
                     # Trưng bày
                     df1 = read_display_excel(tb1)
                     df2 = read_display_excel(tb2)
                     result, m1, m2 = combine_two_months(df1, df2)
         
-                    # Doanh số (tuỳ có upload)
+                    # Doanh số (nếu có)
                     if ds1:
                         s1 = read_sales_excel(ds1, program_sheet_name=prog)
                         result = result.merge(s1, on="Mã khách hàng", how="left")
@@ -266,27 +266,25 @@ for prog in selected_programs:
                     if prog == "NMCD":
                         result = apply_status_nmcd(result, m1, m2, per_slot_min=150_000)
         
-                    # Lưu vào session để sau chỉ lọc/hiện lại
+                    # Lưu session
                     st.session_state[data_key] = {"df": result, "m1": m1, "m2": m2}
                     st.success("✅ Hoàn tất (NMCD): đã ghép doanh số & tính trạng thái.")
                 except Exception as e:
                     st.error(f"Lỗi khi xử lý: {e}")
         
-        # 2) Luôn hiển thị/lọc nếu đã có dữ liệu trong session
+        # 2) Luôn hiển thị/lọc nếu đã có dữ liệu
         if data_key in st.session_state:
             result = st.session_state[data_key]["df"].copy()
             m1 = st.session_state[data_key]["m1"]
             m2 = st.session_state[data_key]["m2"]
         
-            # ---- Bộ lọc (một bảng duy nhất) ----
+            # ---- Bộ lọc ----
             with st.expander("🔎 Bộ lọc", expanded=False):
                 c1, c2, c3, c4 = st.columns([1,1,1,1])
                 with c1:
-                    npp_codes = st.multiselect("Mã NPP",
-                        options=sorted(result["Mã NPP"].dropna().unique().tolist()))
+                    npp_codes = st.multiselect("Mã NPP", options=sorted(result["Mã NPP"].dropna().unique()))
                 with c2:
-                    npp_names = st.multiselect("Tên NPP",
-                        options=sorted(result["Tên NPP"].dropna().unique().tolist()))
+                    npp_names = st.multiselect("Tên NPP", options=sorted(result["Tên NPP"].dropna().unique()))
                 with c3:
                     statuses = st.multiselect("Trạng thái", options=["Đạt","Không Đạt","Không xét"])
                 with c4:
@@ -317,16 +315,17 @@ for prog in selected_programs:
                 & (filtered[f"Doanh số - {m2}"].astype(int) >= int(min_sales_m2))
             ]
         
-            # Hiển thị 1 bảng duy nhất
+            # 1 bảng duy nhất
             st.dataframe(filtered, use_container_width=True)
         
-            # Hai nút tải Excel
+            # 2 nút tải Excel (key phải unique)
             excel_filtered = export_excel_layout(filtered, m1, m2, prog)
             st.download_button(
                 "⬇️ Tải EXCEL – Kết quả (Sau khi lọc)",
                 data=excel_filtered,
                 file_name=f"{prog}_ketqua_loc_{m1}_{m2}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"{prog}_dl_filtered",
             )
         
             excel_raw = export_excel_layout(result, m1, m2, prog)
@@ -335,6 +334,7 @@ for prog in selected_programs:
                 data=excel_raw,
                 file_name=f"{prog}_ketqua_chuan_{m1}_{m2}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"{prog}_dl_raw",
             )
         else:
             st.info("👉 Upload file và bấm **Xử lý** để tạo dữ liệu trước khi lọc/tải.")
