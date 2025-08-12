@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+import numpy as np
 from io import BytesIO
 
 # ================== Cấu hình & Danh mục CT ==================
@@ -144,27 +145,18 @@ def read_sales_excel(file, program_sheet_name: str) -> pd.DataFrame:
     return out
 
 def apply_status_generic(df: pd.DataFrame, m1: str, m2: str, per_slot_min: int) -> pd.DataFrame:
-    """Tính TRẠNG THÁI cho 2 tháng liên tiếp:
-    - Chỉ xét khi KH tham gia cả 2 tháng (số suất > 0). Nếu thiếu 1 tháng -> 'Không xét'
-    - 1 suất phải đạt >= per_slot_min; 2 suất >= 2*per_slot_min (nhân theo số suất)
-    - Nếu cả 2 tháng đều dưới mức tối thiểu -> 'Không Đạt', ngược lại -> 'Đạt'
-    """
     s1_col = f"Giai đoạn - {m1}"
     s2_col = f"Giai đoạn - {m2}"
     d1_col = f"Doanh số - {m1}"
     d2_col = f"Doanh số - {m2}"
 
     df2 = df.copy()
-
-    # chuẩn kiểu
     for c in [s1_col, s2_col, d1_col, d2_col]:
         df2[c] = pd.to_numeric(df2[c], errors="coerce").fillna(0).astype(int)
 
-    # mức tối thiểu từng tháng theo số suất
     min1 = df2[s1_col] * int(per_slot_min)
     min2 = df2[s2_col] * int(per_slot_min)
 
-    # có tham gia?
     join1 = df2[s1_col] > 0
     join2 = df2[s2_col] > 0
 
@@ -184,6 +176,49 @@ def apply_status_generic(df: pd.DataFrame, m1: str, m2: str, per_slot_min: int) 
     df2[f"Tối thiểu - {m1}"] = min1
     df2[f"Tối thiểu - {m2}"] = min2
     return df2
+
+
+def apply_status_kosxx(df: pd.DataFrame, m1: str, m2: str,
+                       min_mb: int = 200_000, min_other: int = 300_000) -> pd.DataFrame:
+    """
+    KOS&XX theo miền:
+      - 'Mã NPP' chứa 'MB'  -> 200k/slot
+      - Còn lại             -> 300k/slot
+    """
+    s1_col = f"Giai đoạn - {m1}"
+    s2_col = f"Giai đoạn - {m2}"
+    d1_col = f"Doanh số - {m1}"
+    d2_col = f"Doanh số - {m2}"
+
+    out = df.copy()
+    for c in [s1_col, s2_col, d1_col, d2_col]:
+        out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0).astype(int)
+
+    npp = out["Mã NPP"].astype(str).str.upper()
+    per_slot = np.where(npp.str.contains("MB", na=False), min_mb, min_other)
+
+    min1 = out[s1_col] * per_slot
+    min2 = out[s2_col] * per_slot
+
+    join1 = out[s1_col] > 0
+    join2 = out[s2_col] > 0
+
+    meet1 = (out[d1_col] >= min1) & join1
+    meet2 = (out[d2_col] >= min2) & join2
+
+    status = []
+    for j1, j2, ok1, ok2 in zip(join1, join2, meet1, meet2):
+        if not (j1 and j2):
+            status.append("Không xét")
+        elif (not ok1) and (not ok2):
+            status.append("Không Đạt")
+        else:
+            status.append("Đạt")
+
+    out["TRẠNG THÁI"] = status
+    out[f"Tối thiểu - {m1}"] = min1
+    out[f"Tối thiểu - {m2}"] = min2
+    return out
 
 def export_excel_layout(df: pd.DataFrame, m1: str, m2: str, prog: str) -> bytes:
     """
@@ -318,9 +353,13 @@ for prog in selected_programs:
 
             for c in [f"Doanh số - {m1}", f"Doanh số - {m2}"]:
                 result[c] = pd.to_numeric(result[c], errors="coerce").fillna(0).astype(int)
-
-            per_min = PER_SLOT_MIN.get(prog, 0)
-            result = apply_status_generic(result, m1, m2, per_slot_min=per_min)
+                
+            if prog == "KOS&XX":
+                # Miền MB: 200k/slot, miền khác: 300k/slot
+                result = apply_status_kosxx(result, m1, m2, min_mb=200_000, min_other=300_000)
+            else:
+                per_min = PER_SLOT_MIN.get(prog, 0)
+                result = apply_status_generic(result, m1, m2, per_slot_min=per_min)
 
             st.session_state[data_key] = {"df": result, "m1": m1, "m2": m2}
             st.success("✅ Hoàn tất: đã ghép doanh số & tính trạng thái.")
