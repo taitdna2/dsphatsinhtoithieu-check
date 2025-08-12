@@ -237,104 +237,104 @@ for prog in selected_programs:
     ds2 = st.file_uploader(f"[{prog}] File doanh số #2", type=["xlsx"], key=f"{prog}_ds2")
 
     if tb1 and tb2 and st.button(f"Xử lý CT {prog}", key=f"{prog}_process"):
-# Dùng session_state để giữ kết quả → lọc mượt, chỉ hiện 1 bảng
-data_key = f"__{prog}_data__"
-
-# 1) Bấm xử lý để tạo dữ liệu & lưu session
-if tb1 and tb2:
-    if st.button(f"Xử lý CT {prog}", key=f"{prog}_process"):
-        try:
-            # Trưng bày
-            df1 = read_display_excel(tb1)
-            df2 = read_display_excel(tb2)
-            result, m1, m2 = combine_two_months(df1, df2)
-
-            # Doanh số (tuỳ có upload)
-            if ds1:
-                s1 = read_sales_excel(ds1, program_sheet_name=prog)
-                result = result.merge(s1, on="Mã khách hàng", how="left")
-                result[f"Doanh số - {m1}"] = result.pop("Tổng Doanh số").fillna(0)
-            if ds2:
-                s2 = read_sales_excel(ds2, program_sheet_name=prog)
-                result = result.merge(s2, on="Mã khách hàng", how="left")
-                if "Tổng Doanh số" in result.columns:
-                    result[f"Doanh số - {m2}"] = result.pop("Tổng Doanh số").fillna(0)
-
-            for c in [f"Doanh số - {m1}", f"Doanh số - {m2}"]:
-                result[c] = pd.to_numeric(result[c], errors="coerce").fillna(0).astype(int)
-
-            if prog == "NMCD":
-                result = apply_status_nmcd(result, m1, m2, per_slot_min=150_000)
-
-            # Lưu vào session để sau chỉ lọc/hiện lại
-            st.session_state[data_key] = {"df": result, "m1": m1, "m2": m2}
-            st.success("✅ Hoàn tất (NMCD): đã ghép doanh số & tính trạng thái.")
-        except Exception as e:
-            st.error(f"Lỗi khi xử lý: {e}")
-
-# 2) Luôn hiển thị/lọc nếu đã có dữ liệu trong session
-if data_key in st.session_state:
-    result = st.session_state[data_key]["df"].copy()
-    m1 = st.session_state[data_key]["m1"]
-    m2 = st.session_state[data_key]["m2"]
-
-    # ---- Bộ lọc (một bảng duy nhất) ----
-    with st.expander("🔎 Bộ lọc", expanded=False):
-        c1, c2, c3, c4 = st.columns([1,1,1,1])
-        with c1:
-            npp_codes = st.multiselect("Mã NPP",
-                options=sorted(result["Mã NPP"].dropna().unique().tolist()))
-        with c2:
-            npp_names = st.multiselect("Tên NPP",
-                options=sorted(result["Tên NPP"].dropna().unique().tolist()))
-        with c3:
-            statuses = st.multiselect("Trạng thái", options=["Đạt","Không Đạt","Không xét"])
-        with c4:
-            kw = st.text_input("Tìm (Mã KH / Tên KH)")
-
-        c5, c6 = st.columns(2)
-        with c5:
-            min_sales_m1 = st.number_input(f"Doanh số tối thiểu – {m1}", min_value=0, value=0, step=50_000)
-        with c6:
-            min_sales_m2 = st.number_input(f"Doanh số tối thiểu – {m2}", min_value=0, value=0, step=50_000)
-
-    # áp dụng lọc
-    filtered = result.copy()
-    if npp_codes:
-        filtered = filtered[filtered["Mã NPP"].isin(npp_codes)]
-    if npp_names:
-        filtered = filtered[filtered["Tên NPP"].isin(npp_names)]
-    if statuses:
-        filtered = filtered[filtered["TRẠNG THÁI"].isin(statuses)]
-    if kw:
-        kw_l = kw.strip().lower()
-        filtered = filtered[
-            filtered["Mã khách hàng"].astype(str).str.lower().str.contains(kw_l)
-            | filtered["Tên khách hàng"].astype(str).str.lower().str.contains(kw_l)
-        ]
-    filtered = filtered[
-        (filtered[f"Doanh số - {m1}"].astype(int) >= int(min_sales_m1))
-        & (filtered[f"Doanh số - {m2}"].astype(int) >= int(min_sales_m2))
-    ]
-
-    # Hiển thị 1 bảng duy nhất
-    st.dataframe(filtered, use_container_width=True)
-
-    # Hai nút tải Excel
-    excel_filtered = export_excel_layout(filtered, m1, m2, prog)
-    st.download_button(
-        "⬇️ Tải EXCEL – Kết quả (Sau khi lọc)",
-        data=excel_filtered,
-        file_name=f"{prog}_ketqua_loc_{m1}_{m2}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-    excel_raw = export_excel_layout(result, m1, m2, prog)
-    st.download_button(
-        "⬇️ Tải EXCEL – Kết quả (Bản chuẩn)",
-        data=excel_raw,
-        file_name=f"{prog}_ketqua_chuan_{m1}_{m2}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-else:
-    st.info("👉 Upload file và bấm **Xử lý** để tạo dữ liệu trước khi lọc/tải.")
+        # Dùng session_state để giữ kết quả → lọc mượt, chỉ hiện 1 bảng
+        data_key = f"__{prog}_data__"
+        
+        # 1) Bấm xử lý để tạo dữ liệu & lưu session
+        if tb1 and tb2:
+            if st.button(f"Xử lý CT {prog}", key=f"{prog}_process"):
+                try:
+                    # Trưng bày
+                    df1 = read_display_excel(tb1)
+                    df2 = read_display_excel(tb2)
+                    result, m1, m2 = combine_two_months(df1, df2)
+        
+                    # Doanh số (tuỳ có upload)
+                    if ds1:
+                        s1 = read_sales_excel(ds1, program_sheet_name=prog)
+                        result = result.merge(s1, on="Mã khách hàng", how="left")
+                        result[f"Doanh số - {m1}"] = result.pop("Tổng Doanh số").fillna(0)
+                    if ds2:
+                        s2 = read_sales_excel(ds2, program_sheet_name=prog)
+                        result = result.merge(s2, on="Mã khách hàng", how="left")
+                        if "Tổng Doanh số" in result.columns:
+                            result[f"Doanh số - {m2}"] = result.pop("Tổng Doanh số").fillna(0)
+        
+                    for c in [f"Doanh số - {m1}", f"Doanh số - {m2}"]:
+                        result[c] = pd.to_numeric(result[c], errors="coerce").fillna(0).astype(int)
+        
+                    if prog == "NMCD":
+                        result = apply_status_nmcd(result, m1, m2, per_slot_min=150_000)
+        
+                    # Lưu vào session để sau chỉ lọc/hiện lại
+                    st.session_state[data_key] = {"df": result, "m1": m1, "m2": m2}
+                    st.success("✅ Hoàn tất (NMCD): đã ghép doanh số & tính trạng thái.")
+                except Exception as e:
+                    st.error(f"Lỗi khi xử lý: {e}")
+        
+        # 2) Luôn hiển thị/lọc nếu đã có dữ liệu trong session
+        if data_key in st.session_state:
+            result = st.session_state[data_key]["df"].copy()
+            m1 = st.session_state[data_key]["m1"]
+            m2 = st.session_state[data_key]["m2"]
+        
+            # ---- Bộ lọc (một bảng duy nhất) ----
+            with st.expander("🔎 Bộ lọc", expanded=False):
+                c1, c2, c3, c4 = st.columns([1,1,1,1])
+                with c1:
+                    npp_codes = st.multiselect("Mã NPP",
+                        options=sorted(result["Mã NPP"].dropna().unique().tolist()))
+                with c2:
+                    npp_names = st.multiselect("Tên NPP",
+                        options=sorted(result["Tên NPP"].dropna().unique().tolist()))
+                with c3:
+                    statuses = st.multiselect("Trạng thái", options=["Đạt","Không Đạt","Không xét"])
+                with c4:
+                    kw = st.text_input("Tìm (Mã KH / Tên KH)")
+        
+                c5, c6 = st.columns(2)
+                with c5:
+                    min_sales_m1 = st.number_input(f"Doanh số tối thiểu – {m1}", min_value=0, value=0, step=50_000)
+                with c6:
+                    min_sales_m2 = st.number_input(f"Doanh số tối thiểu – {m2}", min_value=0, value=0, step=50_000)
+        
+            # áp dụng lọc
+            filtered = result.copy()
+            if npp_codes:
+                filtered = filtered[filtered["Mã NPP"].isin(npp_codes)]
+            if npp_names:
+                filtered = filtered[filtered["Tên NPP"].isin(npp_names)]
+            if statuses:
+                filtered = filtered[filtered["TRẠNG THÁI"].isin(statuses)]
+            if kw:
+                kw_l = kw.strip().lower()
+                filtered = filtered[
+                    filtered["Mã khách hàng"].astype(str).str.lower().str.contains(kw_l)
+                    | filtered["Tên khách hàng"].astype(str).str.lower().str.contains(kw_l)
+                ]
+            filtered = filtered[
+                (filtered[f"Doanh số - {m1}"].astype(int) >= int(min_sales_m1))
+                & (filtered[f"Doanh số - {m2}"].astype(int) >= int(min_sales_m2))
+            ]
+        
+            # Hiển thị 1 bảng duy nhất
+            st.dataframe(filtered, use_container_width=True)
+        
+            # Hai nút tải Excel
+            excel_filtered = export_excel_layout(filtered, m1, m2, prog)
+            st.download_button(
+                "⬇️ Tải EXCEL – Kết quả (Sau khi lọc)",
+                data=excel_filtered,
+                file_name=f"{prog}_ketqua_loc_{m1}_{m2}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        
+            excel_raw = export_excel_layout(result, m1, m2, prog)
+            st.download_button(
+                "⬇️ Tải EXCEL – Kết quả (Bản chuẩn)",
+                data=excel_raw,
+                file_name=f"{prog}_ketqua_chuan_{m1}_{m2}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        else:
+            st.info("👉 Upload file và bấm **Xử lý** để tạo dữ liệu trước khi lọc/tải.")
