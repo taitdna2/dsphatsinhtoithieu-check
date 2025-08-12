@@ -126,7 +126,13 @@ def apply_status_nmcd(df: pd.DataFrame, m1: str, m2: str, per_slot_min: int = 15
     return out
 
 def export_excel_layout(df: pd.DataFrame, m1: str, m2: str, prog: str) -> bytes:
-    """Xuất .xlsx: header gộp + subheader; KHÔNG lặp dòng tiêu đề ở dòng 3."""
+    """
+    Xuất .xlsx:
+    - Header gộp 2 hàng (Giai đoạn m1/m2, Doanh số m1/m2).
+    - KHÔNG có hàng tiêu đề lặp ở dòng 3.
+    - Tô màu TRẠNG THÁI, định dạng số & độ rộng cột.
+    """
+    from io import BytesIO
     import xlsxwriter
 
     cols = [
@@ -134,31 +140,37 @@ def export_excel_layout(df: pd.DataFrame, m1: str, m2: str, prog: str) -> bytes:
         f"Giai đoạn - {m1}", f"Giai đoạn - {m2}",
         f"Doanh số - {m1}", f"Doanh số - {m2}", "TRẠNG THÁI"
     ]
-    df = df.copy()
+
+    d = df.copy()
     for c in cols:
-        if c not in df.columns:
-            df[c] = ""
-    df = df[cols]
+        if c not in d.columns:
+            d[c] = ""
+    d = d[cols].reset_index(drop=True)
+
+    # Chuẩn hoá kiểu số
+    for c in [f"Giai đoạn - {m1}", f"Giai đoạn - {m2}"]:
+        d[c] = pd.to_numeric(d[c], errors="coerce").fillna(0).astype(int)
+    for c in [f"Doanh số - {m1}", f"Doanh số - {m2}"]:
+        d[c] = pd.to_numeric(d[c], errors="coerce").fillna(0).astype(int)
 
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-        sheet = f"{prog}"
-        # Ghi KHÔNG header để không lặp dòng 3
-        df.to_excel(writer, index=False, sheet_name=sheet, startrow=2, header=False)
         wb = writer.book
-        ws = writer.sheets[sheet]
+        ws = wb.add_worksheet(f"{prog}")
 
+        # ==== formats ====
         header = wb.add_format({"bold": True,"align":"center","valign":"vcenter",
                                 "border":1,"bg_color":"#00B0F0","font_color":"#FFFFFF"})
-        sub = wb.add_format({"bold": True,"align":"center","valign":"vcenter","border":1,"bg_color":"#D9EDF7"})
+        sub = wb.add_format({"bold": True,"align":"center","valign":"vcenter",
+                             "border":1,"bg_color":"#D9EDF7"})
         cell = wb.add_format({"border":1})
         center = wb.add_format({"border":1,"align":"center"})
         intfmt = wb.add_format({"border":1,"num_format":"#,##0"})
-        okfmt = wb.add_format({"border":1,"align":"center","bg_color":"#C6EFCE"})
+        okfmt  = wb.add_format({"border":1,"align":"center","bg_color":"#C6EFCE"})
         badfmt = wb.add_format({"border":1,"align":"center","bg_color":"#FFC7CE"})
-        neut = wb.add_format({"border":1,"align":"center","bg_color":"#F2F2F2"})
+        neut   = wb.add_format({"border":1,"align":"center","bg_color":"#F2F2F2"})
 
-        # Header gộp (2 hàng)
+        # ==== header gộp (2 hàng) ====
         ws.merge_range(0,0,1,0,"Mã CTTB", header)
         ws.merge_range(0,1,1,1,"Mã NPP", header)
         ws.merge_range(0,2,1,2,"Tên NPP", header)
@@ -168,31 +180,36 @@ def export_excel_layout(df: pd.DataFrame, m1: str, m2: str, prog: str) -> bytes:
         ws.merge_range(0,7,0,8,"Doanh số", header)
         ws.merge_range(0,9,1,9,"TRẠNG THÁI", header)
 
-        ws.write(1,5,m1, sub)
-        ws.write(1,6,m2, sub)
-        ws.write(1,7,m1, sub)
-        ws.write(1,8,m2, sub)
+        # Hàng 2 (subheader) chỉ ghi tiêu đề con cho 4 cột nhóm
+        ws.write(1,5, m1, sub)
+        ws.write(1,6, m2, sub)
+        ws.write(1,7, m1, sub)
+        ws.write(1,8, m2, sub)
 
-        # Ghi lại dữ liệu có format (không viết dòng tiêu đề pandas)
-        n = len(df)
+        # ==== data (bắt đầu từ hàng 3 - index 2) ====
+        start_row = 2
+        n = len(d)
         for i in range(n):
-            r = 3 + i
-            ws.write(r,0, df.iloc[i,0], cell)
-            ws.write(r,1, df.iloc[i,1], cell)
-            ws.write(r,2, df.iloc[i,2], cell)
-            ws.write(r,3, df.iloc[i,3], cell)
-            ws.write(r,4, df.iloc[i,4], cell)
-            ws.write(r,5, int(df.iloc[i,5] or 0), center)
-            ws.write(r,6, int(df.iloc[i,6] or 0), center)
-            ws.write(r,7, int(df.iloc[i,7] or 0), intfmt)
-            ws.write(r,8, int(df.iloc[i,8] or 0), intfmt)
-            stt = str(df.iloc[i,9]).strip()
-            fmt = okfmt if stt=="Đạt" else badfmt if stt=="Không Đạt" else neut if stt=="Không xét" else center
+            r = start_row + i
+            ws.write(r,0, d.iloc[i,0], cell)           # Mã CTTB
+            ws.write(r,1, d.iloc[i,1], cell)           # Mã NPP
+            ws.write(r,2, d.iloc[i,2], cell)           # Tên NPP
+            ws.write(r,3, d.iloc[i,3], cell)           # Mã KH
+            ws.write(r,4, d.iloc[i,4], cell)           # Tên KH
+            ws.write_number(r,5, int(d.iloc[i,5]), center)   # Giai đoạn m1
+            ws.write_number(r,6, int(d.iloc[i,6]), center)   # Giai đoạn m2
+            ws.write_number(r,7, int(d.iloc[i,7]), intfmt)   # Doanh số m1
+            ws.write_number(r,8, int(d.iloc[i,8]), intfmt)   # Doanh số m2
+
+            stt = str(d.iloc[i,9]).strip()
+            fmt = okfmt if stt == "Đạt" else badfmt if stt == "Không Đạt" else neut if stt == "Không xét" else center
             ws.write(r,9, stt, fmt)
 
+        # width & freeze panes
         widths = [12,12,22,16,28,14,14,16,16,14]
-        for c,w in enumerate(widths):
+        for c, w in enumerate(widths):
             ws.set_column(c, c, w)
+        ws.freeze_panes(start_row, 0)
 
     return buf.getvalue()
 
