@@ -15,6 +15,53 @@ st.set_page_config(page_title="Xử lý dữ liệu trưng bày", layout="wide")
 st.title("📊 Xử lý dữ liệu Trưng bày & Doanh số")
 st.caption("v0.3 — Trưng bày + Doanh số + Trạng thái (NMCD) + Bộ lọc nâng cao + Xuất Excel chuẩn.")
 
+# Chuẩn hoá tên sheet trong file Doanh số (tránh lệch như GVG, KOSXX)
+SHEET_NAME_ALIASES = {
+    "NMCD": "NMCD",
+    "DHLM": "DHLM",
+    "GVG": "GVIG",     # lưu GVG -> mình hiểu là GVIG
+    "GVIG": "GVIG",
+    "LTLKC": "LTLKC",
+    "KOSXX": "KOS&XX", # lưu KOSXX -> mình hiểu là KOS&XX
+    "KOS&XX": "KOS&XX",
+}
+# Mức tối thiểu / 1 suất theo CT (bạn đổi số ở đây nếu chính sách thay đổi)
+PER_SLOT_MIN = {
+    "NMCD": 150_000,  # Nước mắm cao đạm
+    "DHLM": 100_000,  # Dầu hào, Nước tương
+    "KOS&XX": 200_000,  # Cá KOS & Xúc xích
+    "GVIG": 300_000,  # Gia vị gói (Miền Trung/Bắc)
+    "LTLKC": 80_000,   # Lẩu Thái & Lẩu Kim chi
+}
+def _resolve_sheet_name(xls: pd.ExcelFile, program_code: str) -> str:
+    """
+    Trả về tên sheet thực tế trong file doanh số tương ứng với program_code.
+    - Chấp nhận các alias: GVG~GVIG, KOSXX~KOS&XX
+    - Không phân biệt hoa/thường, bỏ khoảng trắng dư.
+    """
+    # chuẩn hoá code được chọn
+    want = SHEET_NAME_ALIASES.get(program_code.strip().upper(), program_code.strip().upper())
+
+    # map sheet trong file -> dạng chuẩn để so
+    norm2real = {}
+    for s in xls.sheet_names:
+        norm = s.strip().upper()
+        norm = SHEET_NAME_ALIASES.get(norm, norm)  # đổi alias về tên chuẩn
+        norm2real[norm] = s  # lưu lại tên thật trong file
+
+    if want in norm2real:
+        return norm2real[want]
+
+    # fallback: thử so khớp gần đúng
+    for norm, real in norm2real.items():
+        if want in norm or norm in want:
+            return real
+
+    raise ValueError(
+        f"Không tìm thấy sheet cho chương trình '{program_code}'. "
+        f"Sheets có trong file: {', '.join(xls.sheet_names)}"
+    )
+
 # ================== Helpers ==================
 BASE_COLS = ["Mã CTTB","Mã NPP","Tên NPP","Mã khách hàng","Tên khách hàng"]
 
@@ -65,20 +112,24 @@ def combine_two_months(d1: pd.DataFrame, d2: pd.DataFrame):
     return out, m1, m2
 
 def read_sales_excel(file, program_sheet_name: str) -> pd.DataFrame:
-    """Đọc file doanh số ở sheet tên trùng CT (vd: 'NMCD'). Trả về [Mã khách hàng, Tổng Doanh số]."""
+    """
+    Đọc file doanh số: chỉ sheet trùng tên chương trình (ví dụ 'NMCD').
+    Tự chuẩn hoá alias sheet: GVG->GVIG, KOSXX->KOS&XX, ...
+    Trả về: ['Mã khách hàng', 'Tổng Doanh số'] đã cộng gộp theo KH.
+    """
     xls = pd.ExcelFile(file, engine="openpyxl")
-    sheets_lower = {s.lower(): s for s in xls.sheet_names}
-    if program_sheet_name.lower() not in sheets_lower:
-        raise ValueError(f"Không thấy sheet '{program_sheet_name}'. Sheets: {', '.join(xls.sheet_names)}")
-    sheet = sheets_lower[program_sheet_name.lower()]
+    # tìm đúng sheet thực tế trong file theo program_sheet_name
+    sheet = _resolve_sheet_name(xls, program_sheet_name)
     df = pd.read_excel(xls, sheet_name=sheet)
 
+    # đoán cột mã KH
     id_candidates = [c for c in df.columns if str(c).strip().lower() in
         ["mã khách hàng","ma khach hang","mã kh","ma kh","customerid","customer id","makh","ma_kh","mã_kh"]]
     if not id_candidates:
         raise ValueError("Không tìm thấy cột Mã khách hàng trong file doanh số")
     col_id = id_candidates[0]
 
+    # đoán cột tổng doanh số
     sales_candidates = [c for c in df.columns if str(c).strip().lower() in
         ["tổng doanh số","tong doanh so","tongdoanhso","doanh so","doanh_số","sum sales","sales"]]
     if not sales_candidates:
@@ -92,23 +143,33 @@ def read_sales_excel(file, program_sheet_name: str) -> pd.DataFrame:
     out = out.groupby("Mã khách hàng", as_index=False)["Tổng Doanh số"].sum()
     return out
 
-def apply_status_nmcd(df: pd.DataFrame, m1: str, m2: str, per_slot_min: int = 150_000) -> pd.DataFrame:
-    """Tính trạng thái cho NMCD:
-       - 1 suất ≥150k, 2 suất ≥300k. Tham gia cả 2 tháng mà cả 2 đều dưới mức => 'Không Đạt'.
-       - Nếu không tham gia đủ 2 tháng => 'Không xét'."""
+def apply_status_generic(df: pd.DataFrame, m1: str, m2: str, per_slot_min: int) -> pd.DataFrame:
+    """Tính TRẠNG THÁI cho 2 tháng liên tiếp:
+    - Chỉ xét khi KH tham gia cả 2 tháng (số suất > 0). Nếu thiếu 1 tháng -> 'Không xét'
+    - 1 suất phải đạt >= per_slot_min; 2 suất >= 2*per_slot_min (nhân theo số suất)
+    - Nếu cả 2 tháng đều dưới mức tối thiểu -> 'Không Đạt', ngược lại -> 'Đạt'
+    """
     s1_col = f"Giai đoạn - {m1}"
     s2_col = f"Giai đoạn - {m2}"
     d1_col = f"Doanh số - {m1}"
     d2_col = f"Doanh số - {m2}"
 
-    min1 = df[s1_col].astype(int) * per_slot_min
-    min2 = df[s2_col].astype(int) * per_slot_min
+    df2 = df.copy()
 
-    join1 = df[s1_col].astype(int) > 0
-    join2 = df[s2_col].astype(int) > 0
+    # chuẩn kiểu
+    for c in [s1_col, s2_col, d1_col, d2_col]:
+        df2[c] = pd.to_numeric(df2[c], errors="coerce").fillna(0).astype(int)
 
-    meet1 = (df[d1_col].astype(int) >= min1) & join1
-    meet2 = (df[d2_col].astype(int) >= min2) & join2
+    # mức tối thiểu từng tháng theo số suất
+    min1 = df2[s1_col] * int(per_slot_min)
+    min2 = df2[s2_col] * int(per_slot_min)
+
+    # có tham gia?
+    join1 = df2[s1_col] > 0
+    join2 = df2[s2_col] > 0
+
+    meet1 = (df2[d1_col] >= min1) & join1
+    meet2 = (df2[d2_col] >= min2) & join2
 
     status = []
     for j1, j2, ok1, ok2 in zip(join1, join2, meet1, meet2):
@@ -119,11 +180,10 @@ def apply_status_nmcd(df: pd.DataFrame, m1: str, m2: str, per_slot_min: int = 15
         else:
             status.append("Đạt")
 
-    out = df.copy()
-    out["TRẠNG THÁI"] = status
-    out[f"Tối thiểu - {m1}"] = min1
-    out[f"Tối thiểu - {m2}"] = min2
-    return out
+    df2["TRẠNG THÁI"] = status
+    df2[f"Tối thiểu - {m1}"] = min1
+    df2[f"Tối thiểu - {m2}"] = min2
+    return df2
 
 def export_excel_layout(df: pd.DataFrame, m1: str, m2: str, prog: str) -> bytes:
     """
@@ -259,8 +319,8 @@ for prog in selected_programs:
             for c in [f"Doanh số - {m1}", f"Doanh số - {m2}"]:
                 result[c] = pd.to_numeric(result[c], errors="coerce").fillna(0).astype(int)
 
-            if prog == "NMCD":
-                result = apply_status_nmcd(result, m1, m2, per_slot_min=150_000)
+            per_min = PER_SLOT_MIN.get(prog, 0)
+            result = apply_status_generic(result, m1, m2, per_slot_min=per_min)
 
             st.session_state[data_key] = {"df": result, "m1": m1, "m2": m2}
             st.success("✅ Hoàn tất: đã ghép doanh số & tính trạng thái.")
