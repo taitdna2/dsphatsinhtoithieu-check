@@ -270,6 +270,68 @@ for prog in selected_programs:
                 result["TRẠNG THÁI"] = result.get("TRẠNG THÁI", "")
 
             st.success("✅ Hoàn tất (NMCD): đã ghép doanh số & tính trạng thái.")
+            # ---- BỘ LỌC (đặt trước khi st.dataframe) ----
+            with st.expander("🔎 Bộ lọc", expanded=True):
+                c1, c2, c3, c4 = st.columns([1,1,1,1])
+            
+                with c1:
+                    npp_codes = st.multiselect(
+                        "Mã NPP",
+                        options=sorted(result["Mã NPP"].dropna().unique().tolist()),
+                        default=[]
+                    )
+                with c2:
+                    npp_names = st.multiselect(
+                        "Tên NPP",
+                        options=sorted(result["Tên NPP"].dropna().unique().tolist()),
+                        default=[]
+                    )
+                with c3:
+                    statuses = st.multiselect(
+                        "Trạng thái",
+                        options=["Đạt","Không Đạt","Không xét"],
+                        default=[]
+                    )
+                with c4:
+                    kw = st.text_input("Tìm (Mã KH / Tên KH)")
+            
+                c5, c6 = st.columns(2)
+                with c5:
+                    min_sales_m1 = st.number_input(f"Doanh số tối thiểu – {m1}", min_value=0, value=0, step=50_000)
+                with c6:
+                    min_sales_m2 = st.number_input(f"Doanh số tối thiểu – {m2}", min_value=0, value=0, step=50_000)
+            
+            # áp dụng lọc
+            filtered = result.copy()
+            if npp_codes:
+                filtered = filtered[filtered["Mã NPP"].isin(npp_codes)]
+            if npp_names:
+                filtered = filtered[filtered["Tên NPP"].isin(npp_names)]
+            if statuses:
+                filtered = filtered[filtered["TRẠNG THÁI"].isin(statuses)]
+            if kw:
+                kw_l = kw.strip().lower()
+                filtered = filtered[
+                    filtered["Mã khách hàng"].astype(str).str.lower().str.contains(kw_l)
+                    | filtered["Tên khách hàng"].astype(str).str.lower().str.contains(kw_l)
+                ]
+            filtered = filtered[
+                (filtered[f"Doanh số - {m1}"].astype(int) >= int(min_sales_m1))
+                & (filtered[f"Doanh số - {m2}"].astype(int) >= int(min_sales_m2))
+            ]
+            
+            # hiển thị bảng sau lọc
+            st.dataframe(filtered, use_container_width=True)
+            
+            # nút tải Excel dùng dữ liệu sau lọc
+            excel_bytes = export_excel_layout(filtered, m1, m2, prog)
+            st.download_button(
+                "⬇️ Tải Excel – Kết quả (sau khi lọc)",
+                data=excel_bytes,
+                file_name=f"{prog}_ketqua_loc_{m1}_{m2}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
             st.dataframe(result, use_container_width=True)
 
 
