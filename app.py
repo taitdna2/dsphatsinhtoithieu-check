@@ -1,5 +1,7 @@
 import pandas as pd
 import streamlit as st
+from io import BytesIO
+
 
 PROGRAMS = {
     "NMCD": "Nước mắm cao đạm",
@@ -131,7 +133,87 @@ def apply_status_nmcd(df: pd.DataFrame, m1: str, m2: str, per_slot_min: int = 15
     df_out[f"Tối thiểu - {m2}"] = min2
     return df_out
 
-# ===== UI =====
+# ==== Xuất Excel Layout ====
+def export_excel_layout(df: pd.DataFrame, m1: str, m2: str, prog: str) -> bytes:
+    """
+    Xuất bảng ra .xlsx với layout:
+    [Mã CTTB, Mã NPP, Tên NPP, Mã KH, Tên KH] |
+    Giai đoạn: [m1, m2] | Doanh số: [m1, m2] | TRẠNG THÁI
+    + merge header, format số, tô màu trạng thái.
+    """
+    import xlsxwriter  # đảm bảo có trong requirements
+
+    cols = [
+        "Mã CTTB","Mã NPP","Tên NPP","Mã khách hàng","Tên khách hàng",
+        f"Giai đoạn - {m1}", f"Giai đoạn - {m2}",
+        f"Doanh số - {m1}", f"Doanh số - {m2}", "TRẠNG THÁI"
+    ]
+    df = df.copy()
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
+    df = df[cols]
+
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+        sheet = f"{prog}"
+        # ghi tạm từ hàng 3 (startrow=2) để chừa header gộp
+        df.to_excel(writer, index=False, sheet_name=sheet, startrow=2)
+        wb = writer.book
+        ws = writer.sheets[sheet]
+
+        # formats
+        header = wb.add_format({"bold": True,"align":"center","valign":"vcenter",
+                                "border":1,"bg_color":"#00B0F0","font_color":"#FFFFFF"})
+        sub = wb.add_format({"bold": True,"align":"center","valign":"vcenter","border":1,"bg_color":"#D9EDF7"})
+        cell = wb.add_format({"border":1})
+        center = wb.add_format({"border":1,"align":"center"})
+        intfmt = wb.add_format({"border":1,"num_format":"#,##0"})
+        okfmt = wb.add_format({"border":1,"align":"center","bg_color":"#C6EFCE"})
+        badfmt = wb.add_format({"border":1,"align":"center","bg_color":"#FFC7CE"})
+        neut = wb.add_format({"border":1,"align":"center","bg_color":"#F2F2F2"})
+
+        # header gộp (2 hàng)
+        ws.merge_range(0,0,1,0,"Mã CTTB", header)
+        ws.merge_range(0,1,1,1,"Mã NPP", header)
+        ws.merge_range(0,2,1,2,"Tên NPP", header)
+        ws.merge_range(0,3,1,3,"Mã khách hàng", header)
+        ws.merge_range(0,4,1,4,"Tên khách hàng", header)
+        ws.merge_range(0,5,0,6,"Giai đoạn", header)
+        ws.merge_range(0,7,0,8,"Doanh số", header)
+        ws.merge_range(0,9,1,9,"TRẠNG THÁI", header)
+
+        ws.write(1,5,m1, sub)
+        ws.write(1,6,m2, sub)
+        ws.write(1,7,m1, sub)
+        ws.write(1,8,m2, sub)
+
+        # ghi lại hàng tiêu đề pandas ở dòng 3 cho có viền
+        ws.write_row(2,0,cols, cell)
+
+        n = len(df)
+        for i in range(n):
+            r = 3 + i
+            ws.write(r,0, df.iloc[i,0], cell)
+            ws.write(r,1, df.iloc[i,1], cell)
+            ws.write(r,2, df.iloc[i,2], cell)
+            ws.write(r,3, df.iloc[i,3], cell)
+            ws.write(r,4, df.iloc[i,4], cell)
+            ws.write(r,5, int(df.iloc[i,5] or 0), center)
+            ws.write(r,6, int(df.iloc[i,6] or 0), center)
+            ws.write(r,7, int(df.iloc[i,7] or 0), intfmt)
+            ws.write(r,8, int(df.iloc[i,8] or 0), intfmt)
+            stt = str(df.iloc[i,9]).strip()
+            fmt = okfmt if stt=="Đạt" else badfmt if stt=="Không Đạt" else neut if stt=="Không xét" else center
+            ws.write(r,9, stt, fmt)
+
+        widths = [12,12,22,16,28,14,14,16,16,14]
+        for c,w in enumerate(widths):
+            ws.set_column(c, c, w)
+
+    return buf.getvalue()
+
+# ===== UI/main =====
 selected_programs = st.multiselect(
     "Chọn chương trình cần xử lý:",
     options=list(PROGRAMS.keys()),
@@ -190,13 +272,14 @@ for prog in selected_programs:
             st.success("✅ Hoàn tất (NMCD): đã ghép doanh số & tính trạng thái.")
             st.dataframe(result, use_container_width=True)
 
-            # Tải xuống CSV
-            csv = result.to_csv(index=False).encode("utf-8-sig")
+
+            # Tải xuống excel
+            excel_bytes = export_excel_layout(result, m1, m2, prog)
             st.download_button(
-                "⬇️ Tải CSV – Kết quả",
-                data=csv,
-                file_name=f"{prog}_ketqua_{m1}_{m2}.csv",
-                mime="text/csv",
+                "⬇️ Tải Excel – Kết quả (layout chuẩn)",
+                data=excel_bytes,
+                file_name=f"{prog}_ketqua_{m1}_{m2}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
         except Exception as e:
