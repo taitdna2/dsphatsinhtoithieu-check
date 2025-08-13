@@ -13,8 +13,66 @@ PROGRAMS = {
 }
 
 st.set_page_config(page_title="Xử lý dữ liệu trưng bày", layout="wide")
-st.title("📊 Xử lý dữ liệu Trưng bày & Doanh số")
-st.caption("v0.3 — Trưng bày + Doanh số + Trạng thái (NMCD) + Bộ lọc nâng cao + Xuất Excel chuẩn.")
+# ===== UI THEME / HEADER =====
+APP_VERSION = "v0.3"
+APP_AUTHOR  = "© Nguyen Anh Tai"
+PRIMARY_EMOJI = "📈"
+
+st.markdown("""
+<style>
+/* Tăng chiều rộng, font, màu */
+[data-testid="stAppViewContainer"] {padding-top: 0rem;}
+:root { --brand: #2f6fed; --text: #1b1f23; --muted: #6b7280; }
+h1.app-title {
+  font-weight: 800; font-size: 44px; line-height: 1.1;
+  margin: 0.15rem 0 0.4rem 0; letter-spacing: -0.02em;
+  background: linear-gradient(90deg,#111827, #334155 60%, #6366f1);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+p.app-sub {
+  color: var(--muted); margin: 0.2rem 0 1.1rem 0; font-size: 16px;
+}
+.badge {
+  display:inline-block; padding: 4px 10px; border-radius: 999px;
+  background:#eef2ff; color:#4338ca; font-weight:600; font-size:12px; margin-left:.5rem;
+  border:1px solid #c7d2fe;
+}
+footer.app-footer {
+  position: fixed; bottom: 12px; right: 18px;
+  background: rgba(255,255,255,.75); backdrop-filter: blur(6px);
+  border: 1px solid #e5e7eb; padding: 6px 10px; border-radius: 10px; font-size: 12px; color:#374151;
+  box-shadow: 0 6px 24px rgba(0,0,0,.05);
+}
+.stDownloadButton, .stButton>button {
+  border-radius: 10px !important; font-weight: 600 !important;
+}
+div[role="tablist"] button[role="tab"] { font-weight: 600; }
+.st-emotion-cache-13k62yr { border-radius: 14px; } /* expander bo tròn */
+thead tr th { position: sticky; top: 0; background: #fff; z-index: 1; }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown(
+    f"""
+    <h1 class="app-title">{PRIMARY_EMOJI} Xử lý dữ liệu Trưng bày &amp; Doanh số
+      <span class="badge">{APP_VERSION}</span>
+      <span class="badge">{APP_AUTHOR}</span>
+    </h1>
+    <p class="app-sub">Trưng bày + Doanh số + Trạng thái · Bộ lọc nâng cao · Xuất Excel chuẩn</p>
+    """,
+    unsafe_allow_html=True,
+)
+# Footer bản quyền (nhẹ nhàng, cố định góc phải dưới)
+st.markdown(f'<footer class="app-footer">{APP_AUTHOR}</footer>', unsafe_allow_html=True)
+
+# Thêm About vào sidebar
+with st.sidebar:
+    st.markdown("### ℹ️ About")
+    st.markdown(
+        f"- Tác giả: **Nguyen Anh Tai**  \n"
+        f"- Phiên bản: **{APP_VERSION}**  \n"
+        "- Tính năng: Trưng bày · Doanh số · Trạng thái · Lọc · Xuất Excel"
+    )
 
 # Chuẩn hoá tên sheet trong file Doanh số (tránh lệch như GVG, KOSXX)
 SHEET_NAME_ALIASES = {
@@ -305,6 +363,7 @@ def export_excel_layout(df: pd.DataFrame, m1: str, m2: str, prog: str) -> bytes:
         for c, w in enumerate(widths):
             ws.set_column(c, c, w)
         ws.freeze_panes(start_row, 0)
+        ws.set_footer('&R© Nguyen Anh Tai')
 
     return buf.getvalue()
 
