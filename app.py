@@ -372,27 +372,50 @@ for prog in selected_programs:
         m1 = st.session_state[data_key]["m1"]
         m2 = st.session_state[data_key]["m2"]
 
-        with st.expander("🔎 Bộ lọc", expanded=False):
+        with st.expander(f"🔎 Bộ lọc — {prog}", expanded=False):
             c1, c2, c3, c4 = st.columns([1,1,1,1])
             with c1:
-                npp_codes = st.multiselect("Mã NPP", options=sorted(result["Mã NPP"].dropna().unique()))
+                npp_codes = st.multiselect(
+                    "Mã NPP",
+                    options=sorted(result["Mã NPP"].dropna().unique()),
+                    key=f"{prog}_npp_codes"
+                )
             with c2:
-                npp_names = st.multiselect("Tên NPP", options=sorted(result["Tên NPP"].dropna().unique()))
+                npp_names = st.multiselect(
+                    "Tên NPP",
+                    options=sorted(result["Tên NPP"].dropna().unique()),
+                    key=f"{prog}_npp_names"
+                )
             with c3:
-                statuses = st.multiselect("Trạng thái", options=["Đạt","Không Đạt","Không xét"])
+                statuses = st.multiselect(
+                    "Trạng thái",
+                    options=["Đạt","Không Đạt","Không xét"],
+                    key=f"{prog}_statuses"
+                )
             with c4:
-                kw = st.text_input("Tìm (Mã KH / Tên KH)")
-
-        # Hàng lọc thứ 2: Doanh số & Giai đoạn (số suất) cho từng tháng
+                kw = st.text_input("Tìm (Mã KH / Tên KH)", key=f"{prog}_kw")
+        
         c5, c6, c7, c8 = st.columns(4)
         with c5:
-            min_sales_m1 = st.number_input(f"Doanh số tối thiểu – {m1}", min_value=0, value=0, step=50_000)
+            min_sales_m1 = st.number_input(
+                f"Doanh số tối thiểu – {m1}",
+                min_value=0, value=0, step=50_000, key=f"{prog}_min_sales_m1"
+            )
         with c6:
-            min_sales_m2 = st.number_input(f"Doanh số tối thiểu – {m2}", min_value=0, value=0, step=50_000)
+            min_sales_m2 = st.number_input(
+                f"Doanh số tối thiểu – {m2}",
+                min_value=0, value=0, step=50_000, key=f"{prog}_min_sales_m2"
+            )
         with c7:
-            min_slots_m1 = st.number_input(f"Giai đoạn (số suất) – {m1}", min_value=0, value=0, step=1)
+            min_slots_m1 = st.number_input(
+                f"Giai đoạn (số suất) – {m1}",
+                min_value=0, value=0, step=1, key=f"{prog}_min_slots_m1"
+            )
         with c8:
-            min_slots_m2 = st.number_input(f"Giai đoạn (số suất) – {m2}", min_value=0, value=0, step=1)
+            min_slots_m2 = st.number_input(
+                f"Giai đoạn (số suất) – {m2}",
+                min_value=0, value=0, step=1, key=f"{prog}_min_slots_m2"
+            )
 
         # ================== Áp dụng lọc ==================
         filtered = result.copy()
